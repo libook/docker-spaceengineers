@@ -3,12 +3,85 @@
 GAME_DIR="/appdata/space-engineers/SpaceEngineersDedicated"
 INSTANCES_DIR="/appdata/space-engineers/instances"
 PLUGIN_DIR="/appdata/space-engineers/plugins"
-CONFIG_PATH="${INSTANCES_DIR}/${INSTANCE_NAME}/SpaceEngineers-Dedicated.cfg"
+INSTANCE_DIR="${INSTANCES_DIR}/${INSTANCE_NAME}"
+CONFIG_PATH="${INSTANCE_DIR}/SpaceEngineers-Dedicated.cfg"
+VDF_PATH="${GAME_DIR}/steamapps/libraryfolders.vdf"
+LINUX_GAME_DIR="${GAME_DIR}"
+WINDOWS_GAME_DIR='Z:\\appdata\\space-engineers\\SpaceEngineersDedicated'
 INSTANCE_IP=$(hostname -I | sed "s= ==g")
 
+# The Linux steamcmd and the Windows Steam client (used by the server under
+# Wine) expect different path formats in libraryfolders.vdf. Keep the file in
+# the format of whichever tool runs next.
+set_vdf_library_path() {
+  local new_path="$1" replacement
+  [ -f "${VDF_PATH}" ] || return 0
+  replacement=$(printf '%s' "${new_path}" | sed 's/\\/\\\\/g')
+  sed -E -i "s#(\"path\"[[:space:]]*\")[^\"]*SpaceEngineersDedicated[^\"]*\"#\\1${replacement}\"#g" "${VDF_PATH}"
+}
+
+# Make sure the Windows Steam client has a library it can use. If steamcmd did
+# not create libraryfolders.vdf, write a minimal one pointing at the server dir.
+write_windows_vdf() {
+  if [ -f "${VDF_PATH}" ]; then
+    set_vdf_library_path "${WINDOWS_GAME_DIR}"
+    return 0
+  fi
+  mkdir -p "$(dirname "${VDF_PATH}")"
+  cat > "${VDF_PATH}" <<EOF
+"libraryfolders"
+{
+	"0"
+	{
+		"path"		"${WINDOWS_GAME_DIR}"
+	}
+}
+EOF
+}
+
+set_vdf_library_path "${LINUX_GAME_DIR}"
 
 echo "-------------------------------INSTALL & UPDATE------------------------------"
 /usr/games/steamcmd +force_install_dir ${GAME_DIR} +login anonymous +@sSteamCmdForcePlatformType windows +app_update 298740 +quit
+
+# The dedicated server ships outdated Steamworks DLLs which cannot resolve the
+# Steam library, so workshop downloads fail with
+# "Staging/Install library folder not found". Updated copies live in the app
+# root; copy them into the directory the server binary loads them from.
+echo "------------------------FIX OUTDATED STEAMWORKS DLLS-------------------------"
+for STEAM_DLL in steamclient64.dll tier0_s64.dll vstdlib_s64.dll; do
+  if [ -f "${GAME_DIR}/${STEAM_DLL}" ]; then
+    cp -f "${GAME_DIR}/${STEAM_DLL}" "${GAME_DIR}/DedicatedServer64/${STEAM_DLL}"
+    echo "Updated DedicatedServer64/${STEAM_DLL}"
+  else
+    echo "Warning: ${GAME_DIR}/${STEAM_DLL} not found, skipping."
+  fi
+done
+
+# Download configured workshop mods with the native Linux steamcmd. This keeps
+# large downloads out of Wine and caches them before the server starts.
+echo "-----------------------------SYNC WORKSHOP MODS------------------------------"
+MOD_IDS=$(grep -hoE '<PublishedFileId>[0-9]+</PublishedFileId>' \
+  "${CONFIG_PATH}" \
+  "${INSTANCE_DIR}"/Saves/*/Sandbox_config.sbc 2>/dev/null \
+  | grep -oE '[0-9]+' | sort -u)
+
+if [ -n "${MOD_IDS}" ]; then
+  WORKSHOP_ARGS=""
+  for MOD_ID in ${MOD_IDS}; do
+    WORKSHOP_ARGS="${WORKSHOP_ARGS} +workshop_download_item 244850 ${MOD_ID}"
+  done
+  echo "Downloading workshop mods: $(echo ${MOD_IDS} | tr '\n' ' ')"
+  # WORKSHOP_ARGS is intentionally unquoted: it is a list of steamcmd arguments.
+  if ! /usr/games/steamcmd +force_install_dir "${GAME_DIR}" +login anonymous ${WORKSHOP_ARGS} +quit; then
+    echo "Warning: workshop download failed; the server will retry the missing mods."
+  fi
+else
+  echo "No workshop mods found in config or world saves."
+fi
+
+echo "---------------------------FIX STEAM LIBRARY PATHS---------------------------"
+write_windows_vdf
 
 echo "---------------------------------UPDATE CONFIG-------------------------------"
 # update IP to host external ip

@@ -1,4 +1,6 @@
-FROM debian:bookworm-20241016-slim
+# check=skip=SecretsUsedInArgOrEnv
+# Debian 13 (trixie), pinned by digest; trixie-slim tag last updated 2026-11-24
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
 
 WORKDIR /root
 
@@ -6,32 +8,35 @@ WORKDIR /root
 # never env DEBIAN_FRONTEND=noninteractive !!
 ARG DEBIAN_FRONTEND=noninteractive
 ARG WINEBRANCH=stable
-ARG WINEVERSION=9.0.0.0~bookworm-1
+ARG WINEVERSION=9.0.0.0~trixie-1
+ARG WINETRICKS_VERSION=20260125
 
 ENV WINEARCH=win64
 ENV WINEDEBUG=-all
 ENV WINEPREFIX=/root/server
+# Not a secret: suppresses the legacy apt-key warning. The BuildKit secret
+# check matches the name, so the check is skipped at the top of this file.
 ENV APT_KEY_DONT_WARN_ON_DANGEROUS_USAGE=1
 
 RUN \
   dpkg --add-architecture i386 && \
   apt-get -qq -y update && \
   apt-get upgrade -y -qq && \
-  apt-get install -y -qq software-properties-common curl gnupg2 wget && \
+  apt-get install -y -qq ca-certificates curl gnupg2 wget && \
   # add repository keys
   mkdir -pm755 /etc/apt/keyrings && \
   wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key && \
   # add repositories
-  echo "deb http://ftp.us.debian.org/debian bookworm main non-free" > /etc/apt/sources.list.d/non-free.list && \
-  wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/bookworm/winehq-bookworm.sources
+  echo "deb http://ftp.us.debian.org/debian trixie main non-free" > /etc/apt/sources.list.d/non-free.list && \
+  wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/debian/dists/trixie/winehq-trixie.sources
 RUN \
   apt-get update -qq && \
   echo steam steam/question select "I AGREE" | debconf-set-selections && \
   echo steam steam/license note '' | debconf-set-selections && \
   apt-get install -qq -y \
   libfaudio0:i386 \
-  libfaudio0 
-RUN \ 
+  libfaudio0
+RUN \
   apt-get install -qq -y --install-recommends \
   winehq-${WINEBRANCH}=${WINEVERSION} \
   wine-${WINEBRANCH}-i386=${WINEVERSION} \
@@ -40,8 +45,8 @@ RUN \
   steamcmd \
   xvfb \
   cabextract && \
-  curl -L https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks > /usr/local/bin/winetricks && \
-  chmod +x /usr/local/bin/winetricks 
+  curl -fsSL "https://raw.githubusercontent.com/Winetricks/winetricks/${WINETRICKS_VERSION}/src/winetricks" -o /usr/local/bin/winetricks && \
+  chmod +x /usr/local/bin/winetricks
 
 # Winetricks (This block uses most of the build time)
 COPY winetricks.sh /root/
@@ -50,8 +55,7 @@ RUN \
   rm -f /root/winetricks.sh && \
   # Remove stuff we do not need anymore to reduce docker size
   apt-get remove -qq -y \
-  gnupg2 \
-  software-properties-common && \
+  gnupg2 && \
   apt-get autoremove -qq -y && \
   apt-get -qq clean autoclean && \
   rm -rf /var/lib/{apt,dpkg,cache,log}/
@@ -60,4 +64,4 @@ COPY healthcheck.sh /root/
 HEALTHCHECK --interval=60s --timeout=60s --start-period=600s --retries=3 CMD [ "/root/healthcheck.sh" ]
 
 COPY entrypoint.sh /root/
-ENTRYPOINT /root/entrypoint.sh
+ENTRYPOINT ["/root/entrypoint.sh"]

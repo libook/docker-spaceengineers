@@ -12,10 +12,13 @@ I wanted to have a more cleaner docker container with less dependencies (integra
 
 | Key         | :latest              | :winestaging         |
 | ----------- | -------------------- | -------------------- |
-| OS          | Debian 12 (Bookworm) | Debian 12 (Bookworm) |
-| Wine        | 9.0~bookworm-1       | 9.9~bookworm-1       |
+| OS          | Debian 13 (Trixie)   | Debian 13 (Trixie)   |
+| Wine        | 9.0~trixie-1         | 9.20~trixie-1        |
 | Docker size | ~1.82GB compressed   | ~1.82GB compressed   |
 | Build Time  | ~ 19 Minutes         | ~ 19 Minutes         |
+
+`:winestaging` can be built from this Dockerfile with
+`--build-arg WINEBRANCH=staging --build-arg WINEVERSION=9.20~trixie-1`.
 
 ## How to use
 

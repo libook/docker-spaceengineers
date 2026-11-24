@@ -3,6 +3,8 @@
 GAME_DIR="/appdata/space-engineers/SpaceEngineersDedicated"
 INSTANCES_DIR="/appdata/space-engineers/instances"
 PLUGIN_DIR="/appdata/space-engineers/plugins"
+WINEPREFIX="${WINEPREFIX:-/root/server}"
+export WINEPREFIX
 INSTANCE_DIR="${INSTANCES_DIR}/${INSTANCE_NAME}"
 CONFIG_PATH="${INSTANCE_DIR}/SpaceEngineers-Dedicated.cfg"
 VDF_PATH="${GAME_DIR}/steamapps/libraryfolders.vdf"
@@ -37,6 +39,90 @@ write_windows_vdf() {
 	}
 }
 EOF
+}
+
+# The Steam client DLL resolves its library through SteamPath in the Wine
+# prefix, not through the game directory. Create a minimal Steam tree and
+# point its library at the game directory, where steamcmd cached the mods.
+prepare_wine_steam() {
+  local steam_dir="${WINEPREFIX}/drive_c/Program Files (x86)/Steam"
+  mkdir -p "${steam_dir}/steamapps/common" \
+           "${steam_dir}/steamapps/downloading" \
+           "${steam_dir}/config" \
+           "${steam_dir}/logs" \
+           "${GAME_DIR}/steamapps/common" \
+           "${GAME_DIR}/steamapps/downloading" \
+           "${GAME_DIR}/steamapps/workshop/content/244850"
+  # Keep the prefix workshop directory in sync with the persistent cache.
+  ln -sfn "${GAME_DIR}/steamapps/workshop" "${steam_dir}/steamapps/workshop" || true
+
+  local windows_steam_dir='C:\\Program Files (x86)\\Steam'
+  cat > "${steam_dir}/steamapps/libraryfolders.vdf" <<EOF
+"libraryfolders"
+{
+	"0"
+	{
+		"path"		"${windows_steam_dir}"
+		"label"		""
+		"contentid"	"0"
+		"totalsize"	"0"
+		"update_clean_bytes_tally"	"0"
+		"time_last_update_corruption"	"0"
+		"apps"
+		{
+		}
+	}
+	"1"
+	{
+		"path"		"${WINDOWS_GAME_DIR}"
+		"label"		""
+		"contentid"	"0"
+		"totalsize"	"0"
+		"update_clean_bytes_tally"	"0"
+		"time_last_update_corruption"	"0"
+		"apps"
+		{
+		}
+	}
+}
+EOF
+  cp -f "${steam_dir}/steamapps/libraryfolders.vdf" "${steam_dir}/config/libraryfolders.vdf"
+
+  # The prefix lives in the image and is recreated when the container is
+  # replaced, so write the registry keys on every start.
+  wine reg add 'HKCU\Software\Valve\Steam' /v SteamPath /t REG_SZ /d 'c:/program files (x86)/steam' /f >/dev/null 2>&1 \
+    || echo "Warning: could not set SteamPath registry key."
+  wine reg add 'HKLM\SOFTWARE\Valve\Steam' /v InstallPath /t REG_SZ /d 'C:\Program Files (x86)\Steam' /f >/dev/null 2>&1 \
+    || echo "Warning: could not set HKLM InstallPath registry key."
+  wine reg add 'HKLM\SOFTWARE\WOW6432Node\Valve\Steam' /v InstallPath /t REG_SZ /d 'C:\Program Files (x86)\Steam' /f >/dev/null 2>&1 \
+    || echo "Warning: could not set WOW6432Node InstallPath registry key."
+
+  echo "Prepared Wine Steam library at ${steam_dir}"
+}
+
+# The dedicated server keeps its own workshop cache under the -path instance
+# directory. Seed it from the Linux steamcmd cache so the server does not have
+# to download mods through the Wine Steam client.
+sync_instance_workshop() {
+  local src="${GAME_DIR}/steamapps/workshop"
+  local dest="${INSTANCE_DIR}"
+  local item name
+  [ -d "${src}/content/244850" ] || return 0
+  mkdir -p "${dest}/content/244850"
+  for item in "${src}/content/244850"/*; do
+    [ -d "${item}" ] || continue
+    name=$(basename "${item}")
+    mkdir -p "${dest}/content/244850/${name}"
+    if ! cp -a "${item}/." "${dest}/content/244850/${name}/"; then
+      echo "Warning: failed to sync workshop item ${name}."
+    fi
+  done
+  if [ -f "${src}/appworkshop_244850.acf" ]; then
+    if ! cp -f "${src}/appworkshop_244850.acf" "${dest}/appworkshop_244850.acf"; then
+      echo "Warning: failed to copy appworkshop_244850.acf."
+    fi
+  fi
+  echo "Synced workshop cache to ${dest}/content/244850"
 }
 
 set_vdf_library_path "${LINUX_GAME_DIR}"
@@ -76,12 +162,23 @@ if [ -n "${MOD_IDS}" ]; then
   if ! /usr/games/steamcmd +force_install_dir "${GAME_DIR}" +login anonymous ${WORKSHOP_ARGS} +quit; then
     echo "Warning: workshop download failed; the server will retry the missing mods."
   fi
+  for MOD_ID in ${MOD_IDS}; do
+    if [ -d "${GAME_DIR}/steamapps/workshop/content/244850/${MOD_ID}" ]; then
+      echo "Workshop item ${MOD_ID}: cached"
+    else
+      echo "Warning: workshop item ${MOD_ID} is not cached."
+    fi
+  done
 else
   echo "No workshop mods found in config or world saves."
 fi
 
+echo "-------------------------SYNC INSTANCE MOD CACHE----------------------------"
+sync_instance_workshop
+
 echo "---------------------------FIX STEAM LIBRARY PATHS---------------------------"
 write_windows_vdf
+prepare_wine_steam
 
 echo "---------------------------------UPDATE CONFIG-------------------------------"
 # update IP to host external ip

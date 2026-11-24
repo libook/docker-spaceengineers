@@ -83,6 +83,9 @@ downloads/updates them with the Linux `steamcmd` before the server starts.
 It also replaces the outdated Steamworks DLLs shipped with the dedicated
 server; without that the Steam client under Wine fails with
 `Staging/Install library folder not found` when it tries to download a mod.
+The downloaded workshop content and `appworkshop_244850.acf` are synced into
+the instance directory, so the server reads them from its `-path` cache
+instead of downloading them through Wine.
 
 ### Can i contribute?
 
@@ -102,10 +105,11 @@ Sure, feel free to submit merge requests or issues if you have anything to impro
 
 - **Workshop mod download failures**
   - The image refreshes `steamclient64.dll`, `tier0_s64.dll` and
-    `vstdlib_s64.dll` from the app root on every start and pre-downloads the
-    configured mods with the Linux `steamcmd`. If a mod still fails, stop the
-    server, delete `content/244850/<mod-id>` and
-    `appworkshop_244850.acf` from
+    `vstdlib_s64.dll` from the app root on every start, pre-downloads the
+    configured mods with the Linux `steamcmd`, and syncs the content plus
+    `appworkshop_244850.acf` into the instance directory. If the instance
+    cache is still corrupt, stop the server, delete `content/244850/<mod-id>`
+    and `appworkshop_244850.acf` from
     `/appdata/space-engineers/instances/<INSTANCE_NAME>`, and start it again.
 - **VRage Remote Client**
   - I personally could not manage to connect with te remote client, if anyone gets a connection please tell me (and maybe how you fixed it) [see here](https://github.com/Devidian/docker-spaceengineers/issues/36)

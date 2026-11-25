@@ -8,10 +8,11 @@ WORKDIR /root
 # never env DEBIAN_FRONTEND=noninteractive !!
 ARG DEBIAN_FRONTEND=noninteractive
 ARG WINEBRANCH=stable
-# Experiment: Wine 11 still uses the old WoW64 packages on Debian 13.
-# Keep the existing native dotnet48 prefix to isolate the Wine version change.
+# Experiment: Wine 11 + Wine Mono 10.4.1 (no native dotnet48).
+# Wine 11.0.0.0~trixie-1 expects exactly this Mono version and SHA.
 ARG WINEVERSION=11.0.0.0~trixie-1
-ARG WINETRICKS_VERSION=20260125
+ARG MONO_VERSION=10.4.1
+ARG MONO_SHA256=071f4b2887e1c97a11d791ff3d65be9429eed6dec4c2708888bfd546ba358e23
 
 ENV WINEARCH=win64
 ENV WINEDEBUG=-all
@@ -46,15 +47,21 @@ RUN \
   wine-${WINEBRANCH}=${WINEVERSION} \
   steamcmd \
   xvfb \
-  cabextract && \
-  curl -fsSL "https://raw.githubusercontent.com/Winetricks/winetricks/${WINETRICKS_VERSION}/src/winetricks" -o /usr/local/bin/winetricks && \
-  chmod +x /usr/local/bin/winetricks
+  cabextract
 
-# Winetricks (This block uses most of the build time)
-COPY winetricks.sh /root/
+# Wine 11.0.0.0~trixie-1 looks for this exact MSI and verifies its SHA.
 RUN \
-  /root/winetricks.sh && \
-  rm -f /root/winetricks.sh && \
+  mkdir -p /usr/share/wine/mono && \
+  curl -fsSL -o "/usr/share/wine/mono/wine-mono-${MONO_VERSION}-x86.msi" \
+    "https://dl.winehq.org/wine/wine-mono/${MONO_VERSION}/wine-mono-${MONO_VERSION}-x86.msi" && \
+  echo "${MONO_SHA256}  /usr/share/wine/mono/wine-mono-${MONO_VERSION}-x86.msi" | sha256sum -c -
+
+# Wine Mono + x64 VC++ prefix (no native dotnet48)
+COPY init-prefix.sh /root/
+RUN \
+  chmod +x /root/init-prefix.sh && \
+  /root/init-prefix.sh && \
+  rm -f /root/init-prefix.sh && \
   # Remove stuff we do not need anymore to reduce docker size
   apt-get remove -qq -y \
   gnupg2 && \

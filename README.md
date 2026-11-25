@@ -13,12 +13,20 @@ I wanted to have a more cleaner docker container with less dependencies (integra
 | Key         | :latest              | :winestaging         |
 | ----------- | -------------------- | -------------------- |
 | OS          | Debian 13 (Trixie)   | Debian 13 (Trixie)   |
-| Wine        | 9.0~trixie-1         | 9.20~trixie-1        |
+| Wine        | 11.0.0.0~trixie-1    | 11.0.0~trixie-1      |
+| .NET        | Wine Mono 10.4.1     | Wine Mono 10.4.1     |
 | Docker size | ~1.82GB compressed   | ~1.82GB compressed   |
 | Build Time  | ~ 19 Minutes         | ~ 19 Minutes         |
 
+The prefix is built from the Wine Mono MSI that Wine 11 expects instead of
+winetricks plus a native dotnet48. `MONO_VERSION` and `MONO_SHA256` in the
+Dockerfile have to match the Wine version, and [init-prefix.sh](init-prefix.sh)
+creates the prefix under Xvfb with only the x64 VC++ 2015-2022 runtime.
+
 `:winestaging` can be built from this Dockerfile with
-`--build-arg WINEBRANCH=staging --build-arg WINEVERSION=9.20~trixie-1`.
+`--build-arg WINEBRANCH=staging --build-arg WINEVERSION=11.0.0~trixie-1`.
+For any other staging version also override `MONO_VERSION` and `MONO_SHA256`
+with the MSI that version expects.
 
 ## How to use
 
@@ -53,6 +61,10 @@ services:
       - target: 27016
         published: 27016
         protocol: udp
+        mode: host
+      - target: 8080
+        published: 18080
+        protocol: tcp
         mode: host
     environment:
       - WINEDEBUG=-all

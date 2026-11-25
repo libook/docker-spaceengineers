@@ -8,7 +8,9 @@ WORKDIR /root
 # never env DEBIAN_FRONTEND=noninteractive !!
 ARG DEBIAN_FRONTEND=noninteractive
 ARG WINEBRANCH=stable
-ARG WINEVERSION=9.0.0.0~trixie-1
+# Experiment: Wine 11 still uses the old WoW64 packages on Debian 13.
+# Keep the existing native dotnet48 prefix to isolate the Wine version change.
+ARG WINEVERSION=11.0.0.0~trixie-1
 ARG WINETRICKS_VERSION=20260125
 
 ENV WINEARCH=win64

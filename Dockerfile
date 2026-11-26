@@ -70,7 +70,7 @@ RUN \
   rm -rf /var/lib/{apt,dpkg,cache,log}/
 
 COPY healthcheck.sh /root/
-HEALTHCHECK --interval=60s --timeout=60s --start-period=600s --retries=3 CMD [ "/root/healthcheck.sh" ]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=600s --retries=3 CMD [ "/root/healthcheck.sh" ]
 
 COPY entrypoint.sh /root/
 ENTRYPOINT ["/root/entrypoint.sh"]

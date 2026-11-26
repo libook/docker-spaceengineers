@@ -69,8 +69,6 @@ services:
     environment:
       - WINEDEBUG=-all
       - INSTANCE_NAME=TestInstance
-      - PUBLIC_IP=1.2.3.4
-      # public ip required for healthcheck
 ```
 
 ## Build the image yourself from source
@@ -98,6 +96,31 @@ server; without that the Steam client under Wine fails with
 The downloaded workshop content and `appworkshop_244850.acf` are synced into
 the instance directory, so the server reads them from its `-path` cache
 instead of downloading them through Wine.
+
+### How does the healthcheck work?
+
+`docker ps` reports `unhealthy` when [healthcheck.sh](healthcheck.sh) fails. It is a
+purely local check: the `SpaceEngineersDedicated.exe` process must be running
+under Wine and its game port (UDP 27016) must be bound. It does not ask Steam,
+because `ISteamApps/GetServersAtAddress` only knows publicly listed servers,
+lags behind the real state, and is rate limited to about one request per minute
+per IP - which made a running server look unhealthy, especially with several
+containers behind one IP.
+
+The check is shipped inside the image, so rebuild (`docker compose up -d --build`)
+after changing it. To see why it fails, run it in the container:
+
+```sh
+docker exec se-ds-docker /root/healthcheck.sh; echo $?
+docker logs --tail 50 se-ds-docker
+```
+
+If you also want to confirm that Steam lists the server publicly, query it
+manually (at most once a minute) with your real public IP:
+
+```sh
+curl "https://api.steampowered.com/ISteamApps/GetServersAtAddress/v1?addr=<public-ip>"
+```
 
 ### Can i contribute?
 
